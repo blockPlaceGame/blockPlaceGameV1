@@ -114,7 +114,8 @@ body {
     text-align: center;
 }
 
-.cooldown-container {
+.cooldown-container,
+.player-count-container {
     font-size: 1rem;
     font-weight: bold;
     background: #333;

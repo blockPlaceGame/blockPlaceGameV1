@@ -13,10 +13,6 @@ app.use(express.static(__dirname));
 // Parse incoming JSON requests for our Login API
 app.use(express.json());
 
-// Make cooldown easily configurable via Render Environment Variables (Defaults to 15 seconds)
-const COOLDOWN_SECONDS = process.env.COOLDOWN_SECONDS || 15;
-const COOLDOWN_MS = COOLDOWN_SECONDS * 1000;
-
 // Initialize PostgreSQL Database
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL, 
@@ -52,7 +48,7 @@ pool.connect(async (err, client, release) => {
 
             // Create settings table for dynamic canvas sizing
             await client.query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
-            await client.query(`INSERT INTO settings (key, value) VALUES ('grid_width', '100'), ('grid_height', '100') ON CONFLICT DO NOTHING`);
+            await client.query(`INSERT INTO settings (key, value) VALUES ('grid_width', '100'), ('grid_height', '100'), ('cooldown_seconds', '15') ON CONFLICT DO NOTHING`);
             console.log("Settings table ready.");
         } catch (error) {
             console.error("Error initializing tables", error);
@@ -100,13 +96,19 @@ app.post('/login', async (req, res) => {
 io.on('connection', async (socket) => {
     console.log(`User connected: ${socket.id}`);
 
+    // Broadcast new player count
+    io.emit('playerCountUpdate', io.engine.clientsCount);
+
+    let cooldownMs = 15000; // Default fallback
+
     try {
         // Fetch and send grid dimensions
-        const configRes = await pool.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height')");
+        const configRes = await pool.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height', 'cooldown_seconds')");
         let width = 100, height = 100;
         configRes.rows.forEach(row => {
             if (row.key === 'grid_width') width = parseInt(row.value);
             if (row.key === 'grid_height') height = parseInt(row.value);
+            if (row.key === 'cooldown_seconds') cooldownMs = parseInt(row.value) * 1000;
         });
         socket.emit('initConfig', { width, height });
 
@@ -130,8 +132,8 @@ io.on('connection', async (socket) => {
             // Parse string to int because Postgres BIGINT returns as string in Node.js
             let timePassed = now - parseInt(lastPlaced);
 
-            if (timePassed < COOLDOWN_MS) {
-                const remainingMs = COOLDOWN_MS - timePassed;
+            if (timePassed < cooldownMs) {
+                const remainingMs = cooldownMs - timePassed;
                 socket.emit('cooldownStatus', { remainingMs });
             }
         });
@@ -149,9 +151,9 @@ io.on('connection', async (socket) => {
             let lastPlaced = res.rows.length > 0 ? res.rows[0].last_placed_time : 0;
             let timePassed = now - parseInt(lastPlaced);
 
-            if (timePassed < COOLDOWN_MS) {
+            if (timePassed < cooldownMs) {
                 // Reject the placement
-                const remainingMs = COOLDOWN_MS - timePassed;
+                const remainingMs = cooldownMs - timePassed;
                 console.log(`User ${username} rejected. Cooldown active for ${remainingMs}ms.`);
                 socket.emit('pixelRejected', { remainingMs });
             } else {
@@ -165,7 +167,7 @@ io.on('connection', async (socket) => {
                     .then(() => pool.query(updatePixel, [x, y, color, username]))
                     .then(() => {
                         // Tell the sender they were accepted, pass the dynamic cooldown, and broadcast to everyone else
-                        socket.emit('pixelAccepted', { x, y, color, username, cooldownMs: COOLDOWN_MS });
+                        socket.emit('pixelAccepted', { x, y, color, username, cooldownMs: cooldownMs });
                         socket.broadcast.emit('pixelUpdate', { x, y, color, username });
                     })
                     .catch(err => console.error("Error saving pixel to DB: " + err.message));
@@ -175,6 +177,8 @@ io.on('connection', async (socket) => {
 
     socket.on('disconnect', () => {
         console.log(`User disconnected: ${socket.id}`);
+        // Broadcast updated player count after a short delay to ensure disconnection is processed
+        io.emit('playerCountUpdate', io.engine.clientsCount);
     });
 });
 

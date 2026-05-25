@@ -67,6 +67,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const ctx = canvas.getContext("2d");
     const paletteContainer = document.getElementById("palette");
     const timerUI = document.getElementById("cooldown-timer");
+    const playerCountUI = document.getElementById("player-count");
     const tooltip = document.getElementById("tooltip");
 
     const boardMetadata = {}; // Store who placed what
@@ -272,6 +273,11 @@ document.addEventListener("DOMContentLoaded", () => {
         canvas.height = gridHeight * 16;
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+    });
+
+    // Listen for live player count
+    socket.on('playerCountUpdate', (count) => {
+        if (playerCountUI) playerCountUI.innerText = count;
     });
 
     // Listen for initial board state from the server
