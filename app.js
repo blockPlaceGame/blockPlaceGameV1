@@ -67,8 +67,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const ctx = canvas.getContext("2d");
     const paletteContainer = document.getElementById("palette");
     const timerUI = document.getElementById("cooldown-timer");
-UPDATE settings SET value = '200' WHERE key = 'grid_width';
-UPDATE settings SET value = '200' WHERE key = 'grid_height';
     const playerCountUI = document.getElementById("player-count");
     const tooltip = document.getElementById("tooltip");
 
