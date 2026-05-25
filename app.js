@@ -3,10 +3,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Identity setup
     let username = localStorage.getItem("rplace_username");
-    if (!username) {
-        username = prompt("Welcome to r/place clone! Please enter a username:") || "Anonymous_" + Math.floor(Math.random() * 10000);
-        localStorage.setItem("rplace_username", username);
+    while (!username || username.trim() === "") {
+        username = prompt("Welcome to r/place clone! Please enter a valid username (required to play):");
     }
+    username = username.trim();
+    localStorage.setItem("rplace_username", username);
     console.log(`Logged in as: ${username}`);
 
     // Initialize Socket.io connection
