@@ -67,6 +67,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const ctx = canvas.getContext("2d");
     const paletteContainer = document.getElementById("palette");
     const timerUI = document.getElementById("cooldown-timer");
+UPDATE settings SET value = '200' WHERE key = 'grid_width';
+UPDATE settings SET value = '200' WHERE key = 'grid_height';
     const playerCountUI = document.getElementById("player-count");
     const tooltip = document.getElementById("tooltip");
 
@@ -139,7 +141,37 @@ document.addEventListener("DOMContentLoaded", () => {
         "coal_block": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/coal_block.png",
         "bookshelf": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/bookshelf.png",
         "sponge": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/sponge.png",
-        "bedrock": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/bedrock.png"
+        "bedrock": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/bedrock.png",
+        "white_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/white_concrete.png",
+        "orange_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/orange_concrete.png",
+        "magenta_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/magenta_concrete.png",
+        "light_blue_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/light_blue_concrete.png",
+        "yellow_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/yellow_concrete.png",
+        "lime_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/lime_concrete.png",
+        "pink_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/pink_concrete.png",
+        "gray_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/gray_concrete.png",
+        "light_gray_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/light_gray_concrete.png",
+        "cyan_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/cyan_concrete.png",
+        "purple_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/purple_concrete.png",
+        "blue_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/blue_concrete.png",
+        "brown_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/brown_concrete.png",
+        "green_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/green_concrete.png",
+        "red_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/red_concrete.png",
+        "black_concrete": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/black_concrete.png",
+        "acacia_planks": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/acacia_planks.png",
+        "birch_planks": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/birch_planks.png",
+        "jungle_planks": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/jungle_planks.png",
+        "spruce_planks": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/spruce_planks.png",
+        "dark_oak_planks": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/dark_oak_planks.png",
+        "andesite": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/andesite.png",
+        "diorite": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/diorite.png",
+        "granite": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/granite.png",
+        "polished_andesite": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/polished_andesite.png",
+        "polished_diorite": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/polished_diorite.png",
+        "polished_granite": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/polished_granite.png",
+        "clay": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/clay.png",
+        "snow": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/snow.png",
+        "packed_ice": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/packed_ice.png"
     };
 
     const blockImages = {};
