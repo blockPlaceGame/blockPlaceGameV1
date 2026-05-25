@@ -149,19 +149,18 @@ body {
 
 .canvas-wrapper {
     flex-grow: 1;
-    overflow: auto;
+    overflow: hidden;
     background-color: #333;
+    position: relative;
 }
 
 canvas {
     background-color: #fff;
-    width: 3000px; /* Massively scaled up to allow scrolling */
-    height: 3000px; 
     image-rendering: pixelated;
     cursor: crosshair;
     box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-    display: block;
-    margin: 50px auto; /* Provides buffer room so you can scroll slightly past the edges */
+    position: absolute;
+    transform-origin: 0 0;
 }
 
 .tooltip {

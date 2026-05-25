@@ -49,6 +49,11 @@ pool.connect(async (err, client, release) => {
 
             // Safely patch existing databases to include the password column
             await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`);
+
+            // Create settings table for dynamic canvas sizing
+            await client.query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
+            await client.query(`INSERT INTO settings (key, value) VALUES ('grid_width', '100'), ('grid_height', '100') ON CONFLICT DO NOTHING`);
+            console.log("Settings table ready.");
         } catch (error) {
             console.error("Error initializing tables", error);
         } finally {
@@ -92,18 +97,26 @@ app.post('/login', async (req, res) => {
     }
 });
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
     console.log(`User connected: ${socket.id}`);
 
-    // Send current board state to the new user
-    pool.query("SELECT x, y, color, username FROM pixels", (err, res) => {
-        if (err) {
-            console.error("Error fetching board state: " + err.message);
-            return;
-        }
-        socket.emit('initBoard', res.rows);
-        console.log(`Sent full board state (${res.rows.length} pixels) to ${socket.id}`);
-    });
+    try {
+        // Fetch and send grid dimensions
+        const configRes = await pool.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height')");
+        let width = 100, height = 100;
+        configRes.rows.forEach(row => {
+            if (row.key === 'grid_width') width = parseInt(row.value);
+            if (row.key === 'grid_height') height = parseInt(row.value);
+        });
+        socket.emit('initConfig', { width, height });
+
+        // Send current board state to the new user
+        const boardRes = await pool.query("SELECT x, y, color, username FROM pixels");
+        socket.emit('initBoard', boardRes.rows);
+        console.log(`Sent full board state (${boardRes.rows.length} pixels) to ${socket.id}`);
+    } catch (err) {
+        console.error("Error fetching initial data: " + err.message);
+    }
 
     // Check if user is on cooldown upon connecting
     socket.on('checkCooldown', (username) => {

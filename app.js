@@ -167,10 +167,76 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Initialize Canvas with white background locally
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    console.log("Canvas initialized with 100x100 grid.");
+    // Map Navigation (Pan & Zoom)
+    const canvasWrapper = document.querySelector('.canvas-wrapper');
+    let scale = 1;
+    let panX = 50;
+    let panY = 50;
+    let isPanning = false;
+    let startMouseX = 0, startMouseY = 0;
+    let startPanX = 0, startPanY = 0;
+
+    function updateTransform() {
+        canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+    }
+    updateTransform();
+
+    // Disable default right-click menu in the wrapper
+    canvasWrapper.addEventListener('contextmenu', e => e.preventDefault());
+
+    // Start Panning
+    canvasWrapper.addEventListener('mousedown', e => {
+        if (e.button === 2) { // Right Click
+            isPanning = true;
+            startMouseX = e.clientX;
+            startMouseY = e.clientY;
+            startPanX = panX;
+            startPanY = panY;
+            canvas.style.cursor = 'grabbing';
+        }
+    });
+
+    // Process Panning
+    window.addEventListener('mousemove', e => {
+        if (isPanning) {
+            panX = startPanX + (e.clientX - startMouseX);
+            panY = startPanY + (e.clientY - startMouseY);
+            updateTransform();
+        }
+    });
+
+    // Stop Panning
+    window.addEventListener('mouseup', e => {
+        if (e.button === 2) {
+            isPanning = false;
+            canvas.style.cursor = 'crosshair';
+        }
+    });
+
+    // Process Zooming
+    canvasWrapper.addEventListener('wheel', e => {
+        e.preventDefault();
+        const zoomIntensity = 0.1;
+        const delta = e.deltaY < 0 ? 1 : -1; // Scroll up = zoom in
+        
+        const rect = canvasWrapper.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        // Calculate current unscaled canvas coordinates of mouse
+        const canvasX = (mouseX - panX) / scale;
+        const canvasY = (mouseY - panY) / scale;
+
+        // Apply new zoom factor
+        const zoomFactor = 1 + delta * zoomIntensity;
+        scale = Math.max(0.1, Math.min(scale * zoomFactor, 20)); // Limit scale from 0.1x to 20x
+
+        // Adjust pan to keep the mouse anchored to the exact same block while zooming
+        panX = mouseX - canvasX * scale;
+        panY = mouseY - canvasY * scale;
+
+        updateTransform();
+    }, { passive: false });
 
     // Build Block Palette UI
     Object.keys(blocks).forEach(blockName => {
@@ -193,6 +259,19 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         paletteContainer.appendChild(swatch);
+    });
+
+    let gridWidth = 100;
+    let gridHeight = 100;
+
+    // Listen for database configuration before rendering
+    socket.on('initConfig', (config) => {
+        gridWidth = config.width;
+        gridHeight = config.height;
+        canvas.width = gridWidth * 16;
+        canvas.height = gridHeight * 16;
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     });
 
     // Listen for initial board state from the server
@@ -240,9 +319,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const rect = canvas.getBoundingClientRect();
         
-        // Calculate precise X, Y coordinates on the 100x100 grid by mapping physical clicks to scaled CSS size
-        const x = Math.floor((event.clientX - rect.left) / (rect.width / 100));
-        const y = Math.floor((event.clientY - rect.top) / (rect.height / 100));
+        // Calculate precise X, Y coordinates, allowing for scaling and panning transforms
+        const x = Math.floor((event.clientX - rect.left) / (rect.width / gridWidth));
+        const y = Math.floor((event.clientY - rect.top) / (rect.height / gridHeight));
 
         // Send the pixel data to the server
         console.log(`Requesting to place pixel at X:${x}, Y:${y} with block ${currentBlock}`);
@@ -252,8 +331,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // Handle Hover Tooltip
     canvas.addEventListener("mousemove", (event) => {
         const rect = canvas.getBoundingClientRect();
-        const x = Math.floor((event.clientX - rect.left) / (rect.width / 100));
-        const y = Math.floor((event.clientY - rect.top) / (rect.height / 100));
+        const x = Math.floor((event.clientX - rect.left) / (rect.width / gridWidth));
+        const y = Math.floor((event.clientY - rect.top) / (rect.height / gridHeight));
         const key = `${x},${y}`;
 
         if (boardMetadata[key]) {
