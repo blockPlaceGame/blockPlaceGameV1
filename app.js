@@ -69,6 +69,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const timerUI = document.getElementById("cooldown-timer");
     const playerCountUI = document.getElementById("player-count");
     const tooltip = document.getElementById("tooltip");
+    const toggleGridBtn = document.getElementById("toggle-grid-btn");
+    const gridOverlay = document.getElementById("grid-overlay");
 
     const boardMetadata = {}; // Store who placed what
 
@@ -198,6 +200,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Toggle Grid functionality
+    toggleGridBtn.addEventListener("click", () => {
+        gridOverlay.classList.toggle("hidden");
+    });
+
     // Map Navigation (Pan & Zoom)
     const canvasWrapper = document.querySelector('.canvas-wrapper');
     let scale = 1;
@@ -209,6 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function updateTransform() {
         canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        gridOverlay.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
     }
     updateTransform();
 
@@ -301,6 +309,8 @@ document.addEventListener("DOMContentLoaded", () => {
         gridHeight = config.height;
         canvas.width = gridWidth * 16;
         canvas.height = gridHeight * 16;
+        gridOverlay.style.width = `${gridWidth * 16}px`;
+        gridOverlay.style.height = `${gridHeight * 16}px`;
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     });
