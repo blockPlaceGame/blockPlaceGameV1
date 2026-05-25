@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>r/place Clone</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="sidebar">
+        <h1>r/place Clone</h1>
+        
+        <div class="cooldown-container">
+            Cooldown: <span id="cooldown-timer">00:00</span>
+        </div>
+        
+        <div id="palette" class="palette"></div>
+    </div>
+    
+    <div class="canvas-wrapper">
+        <canvas id="board" width="1600" height="1600"></canvas>
+    </div>
+    <div id="tooltip" class="tooltip"></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

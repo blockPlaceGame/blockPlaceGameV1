@@ -1,0 +1,67 @@
+The Detailed Staged Implementation Plan
+
+Give this sequence to the agent phase by phase, making sure to test the game locally after each step.
+
+Phase 1: The Local Interface (Frontend Foundation)
+
+    Task: Create the basic structure without any server logic.
+
+    Expected Files: public/index.html, public/style.css, public/app.js.
+
+    Requirements:
+
+        Generate a 100x100 grid visually on the page (using HTML5 <canvas> is best for performance).
+
+        Create a color palette UI allowing the user to select from at least 16 colors.
+
+        Write JavaScript to allow the user to click a coordinate on the grid and change its color locally on their screen.
+
+        Add a visual "Cooldown Timer" UI element (just a visual placeholder for now, set to 00:00).
+
+Phase 2: The Brain & Real-Time Sync (Node.js & Socket.io)
+
+    Task: Set up the backend to serve the frontend and synchronize clicks between multiple browsers.
+
+    Expected Files: server.js, package.json.
+
+    Requirements:
+
+        Initialize a Node.js project and install Express and Socket.io.
+
+        Serve the public/ folder so navigating to http://localhost:3000 loads the interface.
+
+        When a user clicks a pixel, the frontend (app.js) must send an event (pixelPlaced) with the X coordinate, Y coordinate, and Color to the backend.
+
+        The backend (server.js) must broadcast that exact coordinate and color to all other connected clients immediately.
+
+Phase 3: Memory and Persistence (SQLite)
+
+    Task: Ensure the canvas isn't wiped clean if the server crashes or restarts.
+
+    Expected Files: server.js (updated), database.db (auto-generated).
+
+    Requirements:
+
+        Integrate sqlite3 into the backend.
+
+        Create a database table that stores the current color of every X and Y coordinate.
+
+        Whenever the server receives a pixelPlaced event, it must write that update to the database before broadcasting it.
+
+        When a new player loads the webpage, the server must fetch the entire current board state from SQLite and send it to the player so they see the up-to-date canvas.
+
+Phase 4: Cooldown Mechanics & Simple Identity
+
+    Task: Prevent users from spamming the board.
+
+    Expected Files: server.js (updated), public/app.js (updated).
+
+    Requirements:
+
+        Implement a simple username prompt when a user first opens the page (saved to localStorage in the browser).
+
+        Create a new SQLite table to track the last_placed_time for each username.
+
+        When a user tries to place a pixel, the server checks the database. If it has been less than 5 minutes, reject the placement and send an error back.
+
+        Link the frontend Cooldown Timer UI (from Phase 1) to this logic, counting down from 5 minutes and locking the canvas visually until it reaches zero.
