@@ -36,6 +36,9 @@ pool.connect(async (err, client, release) => {
             
             // Safely patch existing databases to include the username column
             await client.query(`ALTER TABLE pixels ADD COLUMN IF NOT EXISTS username TEXT`);
+            
+            // Enable RLS to secure the table from direct Supabase API access
+            await client.query(`ALTER TABLE pixels ENABLE ROW LEVEL SECURITY`);
 
             await client.query(`CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -45,11 +48,17 @@ pool.connect(async (err, client, release) => {
 
             // Safely patch existing databases to include the password column
             await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`);
+            
+            // Enable RLS to secure the table from direct Supabase API access
+            await client.query(`ALTER TABLE users ENABLE ROW LEVEL SECURITY`);
 
             // Create settings table for dynamic canvas sizing
             await client.query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
             await client.query(`INSERT INTO settings (key, value) VALUES ('grid_width', '100'), ('grid_height', '100'), ('cooldown_seconds', '15') ON CONFLICT DO NOTHING`);
             console.log("Settings table ready.");
+            
+            // Enable RLS to secure the table from direct Supabase API access
+            await client.query(`ALTER TABLE settings ENABLE ROW LEVEL SECURITY`);
         } catch (error) {
             console.error("Error initializing tables", error);
         } finally {
