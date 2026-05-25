@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const server = http.createServer(app);
@@ -9,6 +10,8 @@ const io = new Server(server);
 
 // Serve static files from the current directory
 app.use(express.static(__dirname));
+// Parse incoming JSON requests for our Login API
+app.use(express.json());
 
 // Make cooldown easily configurable via Render Environment Variables (Defaults to 15 seconds)
 const COOLDOWN_SECONDS = process.env.COOLDOWN_SECONDS || 15;
@@ -43,11 +46,49 @@ pool.connect(async (err, client, release) => {
                 last_placed_time BIGINT
             )`);
             console.log("Users table ready.");
+
+            // Safely patch existing databases to include the password column
+            await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`);
         } catch (error) {
             console.error("Error initializing tables", error);
         } finally {
             release();
         }
+    }
+});
+
+// --- LOGIN AND REGISTRATION API ---
+app.post('/register', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    
+    try {
+        const hash = await bcrypt.hash(password, 10);
+        // Insert new user. If username exists, postgres throws a unique violation (23505)
+        await pool.query(`INSERT INTO users (username, password_hash, last_placed_time) VALUES ($1, $2, 0)`, [username, hash]);
+        res.json({ success: true });
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ error: 'Username already taken' });
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+app.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    
+    try {
+        const result = await pool.query(`SELECT password_hash FROM users WHERE username = $1`, [username]);
+        if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid username or password' });
+        
+        const match = await bcrypt.compare(password, result.rows[0].password_hash);
+        if (!match) return res.status(401).json({ error: 'Invalid username or password' });
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
     }
 });
 

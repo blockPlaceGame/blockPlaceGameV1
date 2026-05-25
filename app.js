@@ -1,20 +1,63 @@
 document.addEventListener("DOMContentLoaded", () => {
-    console.log("Initializing Phase 5: Minecraft Block Textures");
+    console.log("Initializing Auth System");
 
-    // Identity setup
+    // Auth UI Setup
+    const loginOverlay = document.getElementById("login-overlay");
+    const mainApp = document.getElementById("main-app");
+    const loginBtn = document.getElementById("login-btn");
+    const registerBtn = document.getElementById("register-btn");
+    const usernameInput = document.getElementById("username-input");
+    const passwordInput = document.getElementById("password-input");
+    const loginError = document.getElementById("login-error");
+
     let username = localStorage.getItem("rplace_username");
-    while (!username || username.trim() === "") {
-        username = prompt("Welcome to r/place clone! Please enter a valid username (required to play):");
+    if (username) {
+        usernameInput.value = username;
     }
-    username = username.trim();
-    localStorage.setItem("rplace_username", username);
-    console.log(`Logged in as: ${username}`);
 
-    // Initialize Socket.io connection
-    const socket = io();
+    async function handleAuth(action) {
+        const user = usernameInput.value.trim();
+        const pass = passwordInput.value.trim();
+        
+        if (!user || !pass) return showError("Username and password required");
+        
+        try {
+            const response = await fetch(`/${action}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, password: pass })
+            });
+            
+            const data = await response.json();
+            if (response.ok) {
+                username = user;
+                localStorage.setItem("rplace_username", username);
+                loginOverlay.classList.add("hidden");
+                mainApp.classList.remove("hidden");
+                initApp(); // Launch the game!
+            } else {
+                showError(data.error);
+            }
+        } catch (err) {
+            showError("Could not connect to server");
+        }
+    }
 
-    // Check if we are currently on cooldown
-    socket.emit('checkCooldown', username);
+    function showError(msg) {
+        loginError.innerText = msg;
+        loginError.classList.remove("hidden");
+    }
+
+    loginBtn.addEventListener("click", () => handleAuth('login'));
+    registerBtn.addEventListener("click", () => handleAuth('register'));
+
+    // This function starts the actual game logic AFTER successful login
+    function initApp() {
+        console.log(`Logged in and starting game as: ${username}`);
+        
+        // Initialize Socket.io connection
+        const socket = io();
+
     socket.on('cooldownStatus', (data) => {
         console.log(`Resuming cooldown: ${data.remainingMs}ms remaining.`);
         startCooldown(data.remainingMs);
@@ -226,4 +269,5 @@ document.addEventListener("DOMContentLoaded", () => {
     canvas.addEventListener("mouseleave", () => {
         tooltip.style.display = "none";
     });
+    } // <-- Ends the initApp function
 });

@@ -7,18 +7,34 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="sidebar">
-        <h1>r/place Clone</h1>
-        
-        <div class="cooldown-container">
-            Cooldown: <span id="cooldown-timer">00:00</span>
+    <!-- Login Screen -->
+    <div id="login-overlay" class="login-overlay">
+        <div class="login-box">
+            <h2>r/place Clone</h2>
+            <div id="login-error" class="login-error hidden"></div>
+            <input type="text" id="username-input" placeholder="Username" required>
+            <input type="password" id="password-input" placeholder="Password" required>
+            <div class="login-buttons">
+                <button id="login-btn">Login</button>
+                <button id="register-btn">Register</button>
+            </div>
         </div>
-        
-        <div id="palette" class="palette"></div>
     </div>
     
-    <div class="canvas-wrapper">
-        <canvas id="board" width="1600" height="1600"></canvas>
+    <!-- Main Game App (Hidden until logged in) -->
+    <div id="main-app" class="main-app hidden">
+        <div class="sidebar">
+            <h1>r/place Clone</h1>
+            
+            <div class="cooldown-container">
+                Cooldown: <span id="cooldown-timer">00:00</span>
+            </div>
+            
+            <div id="palette" class="palette"></div>
+        </div>
+        <div class="canvas-wrapper">
+            <canvas id="board" width="1600" height="1600"></canvas>
+        </div>
     </div>
     <div id="tooltip" class="tooltip"></div>
     <script src="/socket.io/socket.io.js"></script>
