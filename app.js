@@ -178,7 +178,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.username) {
             boardMetadata[`${data.x},${data.y}`] = data.username;
         }
-        startCooldown(15 * 1000); // 15 seconds
+        startCooldown(data.cooldownMs || 15000); 
     });
 
     // Handle Server rejecting our pixel

@@ -10,6 +10,10 @@ const io = new Server(server);
 // Serve static files from the current directory
 app.use(express.static(__dirname));
 
+// Make cooldown easily configurable via Render Environment Variables (Defaults to 15 seconds)
+const COOLDOWN_SECONDS = process.env.COOLDOWN_SECONDS || 15;
+const COOLDOWN_MS = COOLDOWN_SECONDS * 1000;
+
 // Initialize PostgreSQL Database
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL, 
@@ -64,7 +68,6 @@ io.on('connection', (socket) => {
     socket.on('checkCooldown', (username) => {
         if (!username) return;
         const now = Date.now();
-        const COOLDOWN_MS = 15 * 1000;
 
         pool.query(`SELECT last_placed_time FROM users WHERE username = $1`, [username], (err, res) => {
             if (err) return console.error("Error checking user cooldown on connect: " + err.message);
@@ -85,7 +88,6 @@ io.on('connection', (socket) => {
         if (!username) return;
 
         const now = Date.now();
-        const COOLDOWN_MS = 15 * 1000; // 15 seconds in milliseconds
 
         pool.query(`SELECT last_placed_time FROM users WHERE username = $1`, [username], (err, res) => {
             if (err) return console.error("Error checking user cooldown: " + err.message);
@@ -108,8 +110,8 @@ io.on('connection', (socket) => {
                 pool.query(updateUser, [username, now])
                     .then(() => pool.query(updatePixel, [x, y, color, username]))
                     .then(() => {
-                        // Tell the sender they were accepted, and broadcast to everyone else
-                        socket.emit('pixelAccepted', { x, y, color, username });
+                        // Tell the sender they were accepted, pass the dynamic cooldown, and broadcast to everyone else
+                        socket.emit('pixelAccepted', { x, y, color, username, cooldownMs: COOLDOWN_MS });
                         socket.broadcast.emit('pixelUpdate', { x, y, color, username });
                     })
                     .catch(err => console.error("Error saving pixel to DB: " + err.message));
