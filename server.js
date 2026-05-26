@@ -326,12 +326,12 @@ server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
 
-// --- HOURLY CLOUDFLARE R2 BACKUP ---
-setInterval(async () => {
+// --- S3 BACKUP SYSTEM ---
+async function runBackup() {
     if (!s3 || !process.env.S3_BUCKET || rawBinaryCache.length === 0) return;
     
     const backupTime = Date.now();
-    console.log("Starting hourly S3 backup...");
+    console.log("Starting S3 backup...");
     
     try {
         const putCommand = new PutObjectCommand({
@@ -346,4 +346,10 @@ setInterval(async () => {
     } catch (err) {
         console.error("S3 backup failed:", err.message);
     }
-}, 1000 * 60 * 60); // 1 hour
+}
+
+// Run exactly once 30 seconds after the server boots up to guarantee the bucket gets populated
+setTimeout(runBackup, 1000 * 30);
+
+// Run continuously every 1 hour while the server remains awake
+setInterval(runBackup, 1000 * 60 * 60);
