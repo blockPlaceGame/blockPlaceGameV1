@@ -10,7 +10,51 @@ const io = new Server(server);
 
 // --- GLOBAL RAM CACHE ---
 const boardCache = {};
+let binaryBoardCache = Buffer.alloc(0);
 let serverConfig = { width: 100, height: 100, cooldownMs: 15000 };
+
+// --- BLOCK ID DICTIONARY ---
+const blockIds = {
+    "dirt": 1, "cobblestone": 2, "oak_planks": 3, "stone": 4, "sand": 5, "gravel": 6, "oak_log": 7, "oak_leaves": 8, "glass": 9, "bricks": 10, "obsidian": 11, "netherrack": 12, "soul_sand": 13, "glowstone": 14, "white_wool": 15, "diamond_block": 16, "orange_wool": 17, "magenta_wool": 18, "light_blue_wool": 19, "yellow_wool": 20, "lime_wool": 21, "pink_wool": 22, "gray_wool": 23, "light_gray_wool": 24, "cyan_wool": 25, "purple_wool": 26, "blue_wool": 27, "brown_wool": 28, "green_wool": 29, "red_wool": 30, "black_wool": 31, "gold_block": 32, "iron_block": 33, "emerald_block": 34, "redstone_block": 35, "lapis_block": 36, "coal_block": 37, "bookshelf": 38, "sponge": 39, "bedrock": 40, "white_concrete": 41, "orange_concrete": 42, "magenta_concrete": 43, "light_blue_concrete": 44, "yellow_concrete": 45, "lime_concrete": 46, "pink_concrete": 47, "gray_concrete": 48, "light_gray_concrete": 49, "cyan_concrete": 50, "purple_concrete": 51, "blue_concrete": 52, "brown_concrete": 53, "green_concrete": 54, "red_concrete": 55, "black_concrete": 56, "acacia_planks": 57, "birch_planks": 58, "jungle_planks": 59, "spruce_planks": 60, "dark_oak_planks": 61, "andesite": 62, "diorite": 63, "granite": 64, "polished_andesite": 65, "polished_diorite": 66, "polished_granite": 67, "clay": 68, "snow": 69, "packed_ice": 70
+};
+
+// --- BINARY SERIALIZER ---
+function serializeBoard(cache) {
+    const pixels = Object.values(cache);
+    let totalSize = 0;
+    const encodedPixels = [];
+
+    for (let i = 0; i < pixels.length; i++) {
+        const p = pixels[i];
+        const blockId = blockIds[p.color] || 41; // Fallback to white_concrete (41) if not found
+        const userBuffer = Buffer.from(p.username || "Unknown", 'utf8');
+        const userLen = Math.min(userBuffer.length, 255);
+        
+        totalSize += 6 + userLen; // X(2 bytes) + Y(2 bytes) + Color(1 byte) + UsernameLength(1 byte) + UsernameText
+        
+        encodedPixels.push({
+            x: p.x,
+            y: p.y,
+            blockId: blockId,
+            userLen: userLen,
+            userBuffer: userBuffer.slice(0, userLen)
+        });
+    }
+
+    const buffer = Buffer.allocUnsafe(totalSize);
+    let offset = 0;
+    
+    for (let i = 0; i < encodedPixels.length; i++) {
+        const p = encodedPixels[i];
+        buffer.writeUInt16LE(p.x, offset); offset += 2;
+        buffer.writeUInt16LE(p.y, offset); offset += 2;
+        buffer.writeUInt8(p.blockId, offset); offset += 1;
+        buffer.writeUInt8(p.userLen, offset); offset += 1;
+        p.userBuffer.copy(buffer, offset); offset += p.userLen;
+    }
+    
+    return buffer;
+}
 
 // Serve static files from the current directory
 app.use(express.static(__dirname));
@@ -78,6 +122,10 @@ pool.connect(async (err, client, release) => {
                 boardCache[`${p.x},${p.y}`] = p;
             });
             console.log(`Loaded ${boardRes.rows.length} pixels into RAM cache.`);
+
+            // Build the initial binary cache
+            binaryBoardCache = serializeBoard(boardCache);
+            console.log(`Serialized board to binary cache: ${binaryBoardCache.length} bytes.`);
         } catch (error) {
             console.error("Error initializing tables", error);
         } finally {
@@ -132,9 +180,8 @@ io.on('connection', async (socket) => {
     try {
         // Send configuration and board state instantly from RAM cache
         socket.emit('initConfig', { width: serverConfig.width, height: serverConfig.height });
-        const pixelsArray = Object.values(boardCache);
-        socket.emit('initBoard', pixelsArray);
-        console.log(`Sent full board state (${pixelsArray.length} pixels) from RAM cache to ${socket.id}`);
+        socket.emit('initBoard', binaryBoardCache);
+        console.log(`Sent full board state as binary (${binaryBoardCache.length} bytes) to ${socket.id}`);
     } catch (err) {
         console.error("Error sending initial data: " + err.message);
     }
@@ -179,6 +226,10 @@ io.on('connection', async (socket) => {
                 // Accept the placement immediately in RAM cache
                 console.log(`Pixel accepted at X:${x}, Y:${y} with color ${color} by ${username}`);
                 boardCache[`${x},${y}`] = { x, y, color, username };
+
+                // Efficiently append ONLY the new pixel to the binary cache (Saves massive CPU by not rebuilding the whole board!)
+                const newPixelBuffer = serializeBoard({ "temp": { x, y, color, username } });
+                binaryBoardCache = Buffer.concat([binaryBoardCache, newPixelBuffer]);
 
                 // Tell the sender and broadcast to everyone else instantly
                 socket.emit('pixelAccepted', { x, y, color, username, cooldownMs: cooldownMs });

@@ -174,6 +174,11 @@ document.addEventListener("DOMContentLoaded", () => {
         "packed_ice": "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/textures/block/packed_ice.png"
     };
 
+    // Reverse mapping for decoding binary block IDs back into names
+    const blockIdsReverse = {
+        1: "dirt", 2: "cobblestone", 3: "oak_planks", 4: "stone", 5: "sand", 6: "gravel", 7: "oak_log", 8: "oak_leaves", 9: "glass", 10: "bricks", 11: "obsidian", 12: "netherrack", 13: "soul_sand", 14: "glowstone", 15: "white_wool", 16: "diamond_block", 17: "orange_wool", 18: "magenta_wool", 19: "light_blue_wool", 20: "yellow_wool", 21: "lime_wool", 22: "pink_wool", 23: "gray_wool", 24: "light_gray_wool", 25: "cyan_wool", 26: "purple_wool", 27: "blue_wool", 28: "brown_wool", 29: "green_wool", 30: "red_wool", 31: "black_wool", 32: "gold_block", 33: "iron_block", 34: "emerald_block", 35: "redstone_block", 36: "lapis_block", 37: "coal_block", 38: "bookshelf", 39: "sponge", 40: "bedrock", 41: "white_concrete", 42: "orange_concrete", 43: "magenta_concrete", 44: "light_blue_concrete", 45: "yellow_concrete", 46: "lime_concrete", 47: "pink_concrete", 48: "gray_concrete", 49: "light_gray_concrete", 50: "cyan_concrete", 51: "purple_concrete", 52: "blue_concrete", 53: "brown_concrete", 54: "green_concrete", 55: "red_concrete", 56: "black_concrete", 57: "acacia_planks", 58: "birch_planks", 59: "jungle_planks", 60: "spruce_planks", 61: "dark_oak_planks", 62: "andesite", 63: "diorite", 64: "granite", 65: "polished_andesite", 66: "polished_diorite", 67: "polished_granite", 68: "clay", 69: "snow", 70: "packed_ice"
+    };
+
     const blockImages = {};
     for (const [name, url] of Object.entries(blocks)) {
         const img = new Image();
@@ -321,14 +326,26 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Listen for initial board state from the server
-    socket.on('initBoard', (pixels) => {
-        console.log(`Received initial board state with ${pixels.length} pixels.`);
-        pixels.forEach(pixel => {
-            drawPixel(pixel.x, pixel.y, pixel.color);
-            if (pixel.username) {
-                boardMetadata[`${pixel.x},${pixel.y}`] = pixel.username;
-            }
-        });
+    socket.on('initBoard', (buffer) => {
+        console.log(`Received initial board state as binary: ${buffer.byteLength} bytes.`);
+        const dataView = new DataView(buffer);
+        let offset = 0;
+
+        while (offset < buffer.byteLength) {
+            const x = dataView.getUint16(offset, true); offset += 2; // true means Little-Endian
+            const y = dataView.getUint16(offset, true); offset += 2;
+            const blockId = dataView.getUint8(offset); offset += 1;
+            const userLen = dataView.getUint8(offset); offset += 1;
+
+            const userBytes = new Uint8Array(buffer, offset, userLen);
+            const username = new TextDecoder('utf-8').decode(userBytes);
+            offset += userLen;
+
+            const color = blockIdsReverse[blockId] || "white_concrete";
+            
+            drawPixel(x, y, color);
+            boardMetadata[`${x},${y}`] = username;
+        }
     });
 
     // Listen for incoming pixel updates from the server
