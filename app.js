@@ -310,6 +310,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Listen for database configuration before rendering
     socket.on('initConfig', (config) => {
+        // Clear metadata in case this is a reconnection
+        for (const key in boardMetadata) delete boardMetadata[key];
+
         gridWidth = config.width;
         gridHeight = config.height;
         canvas.width = gridWidth * 16;

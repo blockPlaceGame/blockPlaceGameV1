@@ -188,6 +188,12 @@ pool.connect(async (err, client, release) => {
             rawBinaryCache = serializeBoard(boardCache);
             compressedBinaryCache = zlib.gzipSync(rawBinaryCache);
             console.log(`Serialized board to binary cache: ${rawBinaryCache.length} bytes (Compressed: ${compressedBinaryCache.length} bytes).`);
+
+            // START LISTENING ONLY AFTER DATA IS READY
+            const PORT = process.env.PORT || 3000;
+            server.listen(PORT, () => {
+                console.log(`Server is running on http://localhost:${PORT}`);
+            });
         } catch (error) {
             console.error("Error initializing tables", error);
         } finally {
@@ -237,8 +243,6 @@ io.on('connection', async (socket) => {
     // Broadcast new player count
     io.emit('playerCountUpdate', io.engine.clientsCount);
 
-    let cooldownMs = serverConfig.cooldownMs;
-
     try {
         // Send configuration and board state instantly from RAM cache
         socket.emit('initConfig', { width: serverConfig.width, height: serverConfig.height });
@@ -260,8 +264,8 @@ io.on('connection', async (socket) => {
             // Parse string to int because Postgres BIGINT returns as string in Node.js
             let timePassed = now - parseInt(lastPlaced);
 
-            if (timePassed < cooldownMs) {
-                const remainingMs = cooldownMs - timePassed;
+            if (timePassed < serverConfig.cooldownMs) {
+                const remainingMs = serverConfig.cooldownMs - timePassed;
                 socket.emit('cooldownStatus', { remainingMs });
             }
         });
@@ -279,9 +283,9 @@ io.on('connection', async (socket) => {
             let lastPlaced = res.rows.length > 0 ? res.rows[0].last_placed_time : 0;
             let timePassed = now - parseInt(lastPlaced);
 
-            if (timePassed < cooldownMs) {
+            if (timePassed < serverConfig.cooldownMs) {
                 // Reject the placement
-                const remainingMs = cooldownMs - timePassed;
+                const remainingMs = serverConfig.cooldownMs - timePassed;
                 console.log(`User ${username} rejected. Cooldown active for ${remainingMs}ms.`);
                 socket.emit('pixelRejected', { remainingMs });
             } else {
@@ -299,7 +303,7 @@ io.on('connection', async (socket) => {
                 });
 
                 // Tell the sender and broadcast to everyone else instantly
-                socket.emit('pixelAccepted', { x, y, color, username, cooldownMs: cooldownMs });
+                socket.emit('pixelAccepted', { x, y, color, username, cooldownMs: serverConfig.cooldownMs });
                 socket.broadcast.emit('pixelUpdate', { x, y, color, username });
                 
                 // Background DB update (Write-Through Cache)
@@ -318,11 +322,6 @@ io.on('connection', async (socket) => {
         // Broadcast updated player count after a short delay to ensure disconnection is processed
         io.emit('playerCountUpdate', io.engine.clientsCount);
     });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
 });
 
 // --- S3 BACKUP SYSTEM ---
