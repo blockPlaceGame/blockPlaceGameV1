@@ -5,6 +5,17 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const zlib = require('zlib');
 
+// --- OPTIONAL S3/CLOUDFLARE CLIENT ---
+let S3Client, PutObjectCommand, GetObjectCommand;
+try {
+    const awsS3 = require('@aws-sdk/client-s3');
+    S3Client = awsS3.S3Client;
+    PutObjectCommand = awsS3.PutObjectCommand;
+    GetObjectCommand = awsS3.GetObjectCommand;
+} catch (e) {
+    console.log("AWS SDK not installed. S3 Backup disabled. Run 'npm install @aws-sdk/client-s3' to enable.");
+}
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -19,6 +30,8 @@ let serverConfig = { width: 100, height: 100, cooldownMs: 15000 };
 const blockIds = {
     "dirt": 1, "cobblestone": 2, "oak_planks": 3, "stone": 4, "sand": 5, "gravel": 6, "oak_log": 7, "oak_leaves": 8, "glass": 9, "bricks": 10, "obsidian": 11, "netherrack": 12, "soul_sand": 13, "glowstone": 14, "white_wool": 15, "diamond_block": 16, "orange_wool": 17, "magenta_wool": 18, "light_blue_wool": 19, "yellow_wool": 20, "lime_wool": 21, "pink_wool": 22, "gray_wool": 23, "light_gray_wool": 24, "cyan_wool": 25, "purple_wool": 26, "blue_wool": 27, "brown_wool": 28, "green_wool": 29, "red_wool": 30, "black_wool": 31, "gold_block": 32, "iron_block": 33, "emerald_block": 34, "redstone_block": 35, "lapis_block": 36, "coal_block": 37, "bookshelf": 38, "sponge": 39, "bedrock": 40, "white_concrete": 41, "orange_concrete": 42, "magenta_concrete": 43, "light_blue_concrete": 44, "yellow_concrete": 45, "lime_concrete": 46, "pink_concrete": 47, "gray_concrete": 48, "light_gray_concrete": 49, "cyan_concrete": 50, "purple_concrete": 51, "blue_concrete": 52, "brown_concrete": 53, "green_concrete": 54, "red_concrete": 55, "black_concrete": 56, "acacia_planks": 57, "birch_planks": 58, "jungle_planks": 59, "spruce_planks": 60, "dark_oak_planks": 61, "andesite": 62, "diorite": 63, "granite": 64, "polished_andesite": 65, "polished_diorite": 66, "polished_granite": 67, "clay": 68, "snow": 69, "packed_ice": 70
 };
+
+const blockIdsReverse = Object.fromEntries(Object.entries(blockIds).map(([k, v]) => [v, k]));
 
 // --- BINARY SERIALIZER ---
 function serializeBoard(cache) {
@@ -64,6 +77,18 @@ const pool = new Pool({
     ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false // Required for most free cloud databases
 });
 
+let s3 = null;
+if (S3Client && process.env.S3_ENDPOINT && process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY) {
+    s3 = new S3Client({
+        region: 'auto',
+        endpoint: process.env.S3_ENDPOINT,
+        credentials: {
+            accessKeyId: process.env.S3_ACCESS_KEY,
+            secretAccessKey: process.env.S3_SECRET_KEY
+        }
+    });
+}
+
 pool.connect(async (err, client, release) => {
     if (err) {
         console.error("Error opening database " + err.message);
@@ -81,6 +106,7 @@ pool.connect(async (err, client, release) => {
             
             // Safely patch existing databases to include the username column
             await client.query(`ALTER TABLE pixels ADD COLUMN IF NOT EXISTS username TEXT`);
+            await client.query(`ALTER TABLE pixels ADD COLUMN IF NOT EXISTS updated_at BIGINT DEFAULT 0`);
             
             // Enable RLS to secure the table from direct Supabase API access
             await client.query(`ALTER TABLE pixels ENABLE ROW LEVEL SECURITY`);
@@ -99,26 +125,61 @@ pool.connect(async (err, client, release) => {
 
             // Create settings table for dynamic canvas sizing
             await client.query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
-            await client.query(`INSERT INTO settings (key, value) VALUES ('grid_width', '100'), ('grid_height', '100'), ('cooldown_seconds', '15') ON CONFLICT DO NOTHING`);
+            await client.query(`INSERT INTO settings (key, value) VALUES ('grid_width', '100'), ('grid_height', '100'), ('cooldown_seconds', '15'), ('last_backup_time', '0') ON CONFLICT DO NOTHING`);
             console.log("Settings table ready.");
             
             // Enable RLS to secure the table from direct Supabase API access
             await client.query(`ALTER TABLE settings ENABLE ROW LEVEL SECURITY`);
 
             // --- INITIALIZE RAM CACHE ON STARTUP ---
-            const configRes = await client.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height', 'cooldown_seconds')");
+            let lastBackupTime = 0;
+            const configRes = await client.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height', 'cooldown_seconds', 'last_backup_time')");
             configRes.rows.forEach(row => {
                 if (row.key === 'grid_width') serverConfig.width = parseInt(row.value);
                 if (row.key === 'grid_height') serverConfig.height = parseInt(row.value);
                 if (row.key === 'cooldown_seconds') serverConfig.cooldownMs = parseInt(row.value) * 1000;
+                if (row.key === 'last_backup_time') lastBackupTime = parseInt(row.value);
             });
             console.log("Settings loaded into RAM cache.");
 
-            const boardRes = await client.query("SELECT x, y, color, username FROM pixels");
+            let s3Loaded = false;
+            if (s3 && process.env.S3_BUCKET) {
+                try {
+                    console.log("Attempting to fetch board backup from S3...");
+                    const getCommand = new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: 'board_backup.bin.gz' });
+                    const s3Obj = await s3.send(getCommand);
+                    
+                    const streamToBuffer = (stream) => new Promise((res, rej) => {
+                        const chunks = [];
+                        stream.on("data", (chunk) => chunks.push(chunk));
+                        stream.on("error", rej);
+                        stream.on("end", () => res(Buffer.concat(chunks)));
+                    });
+                    
+                    const rawS3Buffer = zlib.gunzipSync(await streamToBuffer(s3Obj.Body));
+                    
+                    let offset = 0;
+                    while (offset < rawS3Buffer.length) {
+                        const x = rawS3Buffer.readUInt16LE(offset); offset += 2;
+                        const y = rawS3Buffer.readUInt16LE(offset); offset += 2;
+                        const blockId = rawS3Buffer.readUInt8(offset); offset += 1;
+                        const userLen = rawS3Buffer.readUInt8(offset); offset += 1;
+                        const username = rawS3Buffer.toString('utf8', offset, offset + userLen); offset += userLen;
+                        boardCache[`${x},${y}`] = { x, y, color: blockIdsReverse[blockId] || "white_concrete", username };
+                    }
+                    s3Loaded = true;
+                    console.log(`Loaded ${Object.keys(boardCache).length} pixels from S3 Backup.`);
+                } catch (err) {
+                    console.log("S3 fetch skipped or missing. Falling back to DB.", err.message);
+                }
+            }
+
+            const queryTime = s3Loaded ? lastBackupTime : 0;
+            const boardRes = await client.query("SELECT x, y, color, username FROM pixels WHERE updated_at >= $1", [queryTime]);
             boardRes.rows.forEach(p => {
                 boardCache[`${p.x},${p.y}`] = p;
             });
-            console.log(`Loaded ${boardRes.rows.length} pixels into RAM cache.`);
+            console.log(`Loaded ${boardRes.rows.length} newer pixels from Database.`);
 
             // Help the Garbage Collector: Clear the massive SQL array before doing binary math
             boardRes.rows.length = 0; 
@@ -243,10 +304,10 @@ io.on('connection', async (socket) => {
                 
                 // Background DB update (Write-Through Cache)
                 const updateUser = `INSERT INTO users (username, last_placed_time) VALUES ($1, $2) ON CONFLICT (username) DO UPDATE SET last_placed_time = EXCLUDED.last_placed_time`;
-                const updatePixel = `INSERT INTO pixels (x, y, color, username) VALUES ($1, $2, $3, $4) ON CONFLICT (x, y) DO UPDATE SET color = EXCLUDED.color, username = EXCLUDED.username`;
+                const updatePixel = `INSERT INTO pixels (x, y, color, username, updated_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (x, y) DO UPDATE SET color = EXCLUDED.color, username = EXCLUDED.username, updated_at = EXCLUDED.updated_at`;
                 
                 pool.query(updateUser, [username, now])
-                    .then(() => pool.query(updatePixel, [x, y, color, username]))
+                    .then(() => pool.query(updatePixel, [x, y, color, username, now]))
                     .catch(err => console.error("Error saving pixel to DB: " + err.message));
             }
         });
@@ -263,3 +324,25 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
+
+// --- HOURLY CLOUDFLARE R2 BACKUP ---
+setInterval(async () => {
+    if (!s3 || !process.env.S3_BUCKET || rawBinaryCache.length === 0) return;
+    
+    const backupTime = Date.now();
+    console.log("Starting hourly S3 backup...");
+    
+    try {
+        const putCommand = new PutObjectCommand({
+            Bucket: process.env.S3_BUCKET,
+            Key: 'board_backup.bin.gz',
+            Body: compressedBinaryCache,
+            ContentType: 'application/gzip'
+        });
+        await s3.send(putCommand);
+        await pool.query("UPDATE settings SET value = $1 WHERE key = 'last_backup_time'", [backupTime]);
+        console.log("S3 backup successful!");
+    } catch (err) {
+        console.error("S3 backup failed:", err.message);
+    }
+}, 1000 * 60 * 60); // 1 hour
