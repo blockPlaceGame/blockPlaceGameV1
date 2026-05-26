@@ -8,6 +8,10 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// --- GLOBAL RAM CACHE ---
+const boardCache = {};
+let serverConfig = { width: 100, height: 100, cooldownMs: 15000 };
+
 // Serve static files from the current directory
 app.use(express.static(__dirname));
 // Parse incoming JSON requests for our Login API
@@ -59,6 +63,21 @@ pool.connect(async (err, client, release) => {
             
             // Enable RLS to secure the table from direct Supabase API access
             await client.query(`ALTER TABLE settings ENABLE ROW LEVEL SECURITY`);
+
+            // --- INITIALIZE RAM CACHE ON STARTUP ---
+            const configRes = await client.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height', 'cooldown_seconds')");
+            configRes.rows.forEach(row => {
+                if (row.key === 'grid_width') serverConfig.width = parseInt(row.value);
+                if (row.key === 'grid_height') serverConfig.height = parseInt(row.value);
+                if (row.key === 'cooldown_seconds') serverConfig.cooldownMs = parseInt(row.value) * 1000;
+            });
+            console.log("Settings loaded into RAM cache.");
+
+            const boardRes = await client.query("SELECT x, y, color, username FROM pixels");
+            boardRes.rows.forEach(p => {
+                boardCache[`${p.x},${p.y}`] = p;
+            });
+            console.log(`Loaded ${boardRes.rows.length} pixels into RAM cache.`);
         } catch (error) {
             console.error("Error initializing tables", error);
         } finally {
@@ -108,25 +127,16 @@ io.on('connection', async (socket) => {
     // Broadcast new player count
     io.emit('playerCountUpdate', io.engine.clientsCount);
 
-    let cooldownMs = 15000; // Default fallback
+    let cooldownMs = serverConfig.cooldownMs;
 
     try {
-        // Fetch and send grid dimensions
-        const configRes = await pool.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height', 'cooldown_seconds')");
-        let width = 100, height = 100;
-        configRes.rows.forEach(row => {
-            if (row.key === 'grid_width') width = parseInt(row.value);
-            if (row.key === 'grid_height') height = parseInt(row.value);
-            if (row.key === 'cooldown_seconds') cooldownMs = parseInt(row.value) * 1000;
-        });
-        socket.emit('initConfig', { width, height });
-
-        // Send current board state to the new user
-        const boardRes = await pool.query("SELECT x, y, color, username FROM pixels");
-        socket.emit('initBoard', boardRes.rows);
-        console.log(`Sent full board state (${boardRes.rows.length} pixels) to ${socket.id}`);
+        // Send configuration and board state instantly from RAM cache
+        socket.emit('initConfig', { width: serverConfig.width, height: serverConfig.height });
+        const pixelsArray = Object.values(boardCache);
+        socket.emit('initBoard', pixelsArray);
+        console.log(`Sent full board state (${pixelsArray.length} pixels) from RAM cache to ${socket.id}`);
     } catch (err) {
-        console.error("Error fetching initial data: " + err.message);
+        console.error("Error sending initial data: " + err.message);
     }
 
     // Check if user is on cooldown upon connecting
@@ -166,19 +176,20 @@ io.on('connection', async (socket) => {
                 console.log(`User ${username} rejected. Cooldown active for ${remainingMs}ms.`);
                 socket.emit('pixelRejected', { remainingMs });
             } else {
-                // Accept the placement
+                // Accept the placement immediately in RAM cache
                 console.log(`Pixel accepted at X:${x}, Y:${y} with color ${color} by ${username}`);
+                boardCache[`${x},${y}`] = { x, y, color, username };
+
+                // Tell the sender and broadcast to everyone else instantly
+                socket.emit('pixelAccepted', { x, y, color, username, cooldownMs: cooldownMs });
+                socket.broadcast.emit('pixelUpdate', { x, y, color, username });
                 
+                // Background DB update (Write-Through Cache)
                 const updateUser = `INSERT INTO users (username, last_placed_time) VALUES ($1, $2) ON CONFLICT (username) DO UPDATE SET last_placed_time = EXCLUDED.last_placed_time`;
                 const updatePixel = `INSERT INTO pixels (x, y, color, username) VALUES ($1, $2, $3, $4) ON CONFLICT (x, y) DO UPDATE SET color = EXCLUDED.color, username = EXCLUDED.username`;
                 
                 pool.query(updateUser, [username, now])
                     .then(() => pool.query(updatePixel, [x, y, color, username]))
-                    .then(() => {
-                        // Tell the sender they were accepted, pass the dynamic cooldown, and broadcast to everyone else
-                        socket.emit('pixelAccepted', { x, y, color, username, cooldownMs: cooldownMs });
-                        socket.broadcast.emit('pixelUpdate', { x, y, color, username });
-                    })
                     .catch(err => console.error("Error saving pixel to DB: " + err.message));
             }
         });
