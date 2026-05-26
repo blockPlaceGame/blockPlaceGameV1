@@ -194,9 +194,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (blockImages[value].complete) {
                 ctx.drawImage(blockImages[value], x * cellSize, y * cellSize, cellSize, cellSize);
             } else {
-                blockImages[value].addEventListener('load', () => {
-                    ctx.drawImage(blockImages[value], x * cellSize, y * cellSize, cellSize, cellSize);
-                });
+                // Fallback color to prevent 1,000,000 event listeners crashing the browser
+                ctx.fillStyle = "#cccccc";
+                ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
             }
         } else {
             // Fallback for old hex colors saved in DB from previous phases
@@ -329,6 +329,7 @@ document.addEventListener("DOMContentLoaded", () => {
     socket.on('initBoard', (buffer) => {
         console.log(`Received initial board state as binary: ${buffer.byteLength} bytes.`);
         const dataView = new DataView(buffer);
+        const decoder = new TextDecoder('utf-8'); // Move outside loop for massive speed boost!
         let offset = 0;
 
         while (offset < buffer.byteLength) {
@@ -338,7 +339,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const userLen = dataView.getUint8(offset); offset += 1;
 
             const userBytes = new Uint8Array(buffer, offset, userLen);
-            const username = new TextDecoder('utf-8').decode(userBytes);
+            const username = decoder.decode(userBytes);
             offset += userLen;
 
             const color = blockIdsReverse[blockId] || "white_concrete";

@@ -43,7 +43,7 @@ function serializeBoard(cache) {
 
         buffer.writeUInt16LE(p.x, offset); offset += 2;
         buffer.writeUInt16LE(p.y, offset); offset += 2;
-        buffer.writeUInt8(p.blockId, offset); offset += 1;
+        buffer.writeUInt8(blockId, offset); offset += 1;
         buffer.writeUInt8(userLen, offset); offset += 1;
         buffer.write(userStr, offset, userLen, 'utf8'); offset += userLen;
     }
