@@ -85,7 +85,8 @@ if (S3Client && process.env.S3_ENDPOINT && process.env.S3_ACCESS_KEY && process.
         credentials: {
             accessKeyId: process.env.S3_ACCESS_KEY,
             secretAccessKey: process.env.S3_SECRET_KEY
-        }
+        },
+        forcePathStyle: true // Required for Supabase S3 API to prevent SSL handshake errors
     });
 }
 
