@@ -24,7 +24,7 @@ const io = new Server(server);
 const boardCache = {};
 let rawBinaryCache = Buffer.alloc(0);
 let compressedBinaryCache = Buffer.alloc(0);
-let serverConfig = { width: 100, height: 100, cooldownMs: 15000 };
+let serverConfig = { width: 100, height: 100, cooldownMs: 15000, lastBackupTime: 0 };
 
 // --- BLOCK ID DICTIONARY ---
 const blockIds = {
@@ -133,13 +133,12 @@ pool.connect(async (err, client, release) => {
             await client.query(`ALTER TABLE settings ENABLE ROW LEVEL SECURITY`);
 
             // --- INITIALIZE RAM CACHE ON STARTUP ---
-            let lastBackupTime = 0;
             const configRes = await client.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height', 'cooldown_seconds', 'last_backup_time')");
             configRes.rows.forEach(row => {
                 if (row.key === 'grid_width') serverConfig.width = parseInt(row.value);
                 if (row.key === 'grid_height') serverConfig.height = parseInt(row.value);
                 if (row.key === 'cooldown_seconds') serverConfig.cooldownMs = parseInt(row.value) * 1000;
-                if (row.key === 'last_backup_time') lastBackupTime = parseInt(row.value);
+                if (row.key === 'last_backup_time') serverConfig.lastBackupTime = parseInt(row.value);
             });
             console.log("Settings loaded into RAM cache.");
 
@@ -175,7 +174,7 @@ pool.connect(async (err, client, release) => {
                 }
             }
 
-            const queryTime = s3Loaded ? lastBackupTime : 0;
+            const queryTime = s3Loaded ? serverConfig.lastBackupTime : 0;
             const boardRes = await client.query("SELECT x, y, color, username FROM pixels WHERE updated_at >= $1", [queryTime]);
             boardRes.rows.forEach(p => {
                 boardCache[`${p.x},${p.y}`] = p;
@@ -330,7 +329,14 @@ server.listen(PORT, () => {
 async function runBackup() {
     if (!s3 || !process.env.S3_BUCKET || rawBinaryCache.length === 0) return;
     
-    const backupTime = Date.now();
+    const now = Date.now();
+    const ONE_HOUR = 1000 * 60 * 60;
+    
+    if (now - serverConfig.lastBackupTime < ONE_HOUR) {
+        console.log("Skipping S3 backup: Last backup was less than 1 hour ago.");
+        return;
+    }
+    
     console.log("Starting S3 backup...");
     
     try {
@@ -341,7 +347,8 @@ async function runBackup() {
             ContentType: 'application/gzip'
         });
         await s3.send(putCommand);
-        await pool.query("UPDATE settings SET value = $1 WHERE key = 'last_backup_time'", [backupTime]);
+        await pool.query("UPDATE settings SET value = $1 WHERE key = 'last_backup_time'", [now]);
+        serverConfig.lastBackupTime = now;
         console.log("S3 backup successful!");
     } catch (err) {
         console.error("S3 backup failed:", err.message);
