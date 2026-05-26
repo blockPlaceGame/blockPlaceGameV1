@@ -326,8 +326,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Listen for initial board state from the server
-    socket.on('initBoard', (buffer) => {
-        console.log(`Received initial board state as binary: ${buffer.byteLength} bytes.`);
+    socket.on('initBoard', async (compressedBuffer) => {
+        console.log(`Received initial board state as compressed binary: ${compressedBuffer.byteLength} bytes.`);
+        
+        // Decompress the gzip data using the browser's native API
+        const response = new Response(compressedBuffer);
+        const decompressedStream = response.body.pipeThrough(new DecompressionStream('gzip'));
+        const buffer = await new Response(decompressedStream).arrayBuffer();
+        
+        console.log(`Decompressed to ${buffer.byteLength} bytes! Drawing board...`);
         const dataView = new DataView(buffer);
         const decoder = new TextDecoder('utf-8'); // Move outside loop for massive speed boost!
         let offset = 0;

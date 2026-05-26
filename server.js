@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
+const zlib = require('zlib');
 
 const app = express();
 const server = http.createServer(app);
@@ -10,7 +11,8 @@ const io = new Server(server);
 
 // --- GLOBAL RAM CACHE ---
 const boardCache = {};
-let binaryBoardCache = Buffer.alloc(0);
+let rawBinaryCache = Buffer.alloc(0);
+let compressedBinaryCache = Buffer.alloc(0);
 let serverConfig = { width: 100, height: 100, cooldownMs: 15000 };
 
 // --- BLOCK ID DICTIONARY ---
@@ -122,8 +124,9 @@ pool.connect(async (err, client, release) => {
             boardRes.rows.length = 0; 
 
             // Build the initial binary cache
-            binaryBoardCache = serializeBoard(boardCache);
-            console.log(`Serialized board to binary cache: ${binaryBoardCache.length} bytes.`);
+            rawBinaryCache = serializeBoard(boardCache);
+            compressedBinaryCache = zlib.gzipSync(rawBinaryCache);
+            console.log(`Serialized board to binary cache: ${rawBinaryCache.length} bytes (Compressed: ${compressedBinaryCache.length} bytes).`);
         } catch (error) {
             console.error("Error initializing tables", error);
         } finally {
@@ -178,8 +181,8 @@ io.on('connection', async (socket) => {
     try {
         // Send configuration and board state instantly from RAM cache
         socket.emit('initConfig', { width: serverConfig.width, height: serverConfig.height });
-        socket.emit('initBoard', binaryBoardCache);
-        console.log(`Sent full board state as binary (${binaryBoardCache.length} bytes) to ${socket.id}`);
+        socket.emit('initBoard', compressedBinaryCache);
+        console.log(`Sent full board state as compressed binary (${compressedBinaryCache.length} bytes) to ${socket.id}`);
     } catch (err) {
         console.error("Error sending initial data: " + err.message);
     }
@@ -225,9 +228,14 @@ io.on('connection', async (socket) => {
                 console.log(`Pixel accepted at X:${x}, Y:${y} with color ${color} by ${username}`);
                 boardCache[`${x},${y}`] = { x, y, color, username };
 
-                // Efficiently append ONLY the new pixel to the binary cache (Saves massive CPU by not rebuilding the whole board!)
+                // Efficiently append ONLY the new pixel to the raw binary cache (Saves massive CPU!)
                 const newPixelBuffer = serializeBoard({ "temp": { x, y, color, username } });
-                binaryBoardCache = Buffer.concat([binaryBoardCache, newPixelBuffer]);
+                rawBinaryCache = Buffer.concat([rawBinaryCache, newPixelBuffer]);
+
+                // Asynchronously update the compressed cache in the background (Non-blocking!)
+                zlib.gzip(rawBinaryCache, (err, compressed) => {
+                    if (!err) compressedBinaryCache = compressed;
+                });
 
                 // Tell the sender and broadcast to everyone else instantly
                 socket.emit('pixelAccepted', { x, y, color, username, cooldownMs: cooldownMs });
