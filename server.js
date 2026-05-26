@@ -22,35 +22,30 @@ const blockIds = {
 function serializeBoard(cache) {
     const pixels = Object.values(cache);
     let totalSize = 0;
-    const encodedPixels = [];
 
+    // Pass 1: Calculate exact buffer size needed (No temporary objects created!)
     for (let i = 0; i < pixels.length; i++) {
         const p = pixels[i];
-        const blockId = blockIds[p.color] || 41; // Fallback to white_concrete (41) if not found
-        const userBuffer = Buffer.from(p.username || "Unknown", 'utf8');
-        const userLen = Math.min(userBuffer.length, 255);
-        
+        const userLen = Buffer.byteLength(p.username || "Unknown", 'utf8');
         totalSize += 6 + userLen; // X(2 bytes) + Y(2 bytes) + Color(1 byte) + UsernameLength(1 byte) + UsernameText
-        
-        encodedPixels.push({
-            x: p.x,
-            y: p.y,
-            blockId: blockId,
-            userLen: userLen,
-            userBuffer: userBuffer.slice(0, userLen)
-        });
     }
 
+    // Pass 2: Allocate one single buffer and write directly to it
     const buffer = Buffer.allocUnsafe(totalSize);
     let offset = 0;
     
-    for (let i = 0; i < encodedPixels.length; i++) {
-        const p = encodedPixels[i];
+    for (let i = 0; i < pixels.length; i++) {
+        const p = pixels[i];
+        const blockId = blockIds[p.color] || 41;
+        const userStr = p.username || "Unknown";
+        const userLenBytes = Buffer.byteLength(userStr, 'utf8');
+        const userLen = Math.min(userLenBytes, 255);
+
         buffer.writeUInt16LE(p.x, offset); offset += 2;
         buffer.writeUInt16LE(p.y, offset); offset += 2;
         buffer.writeUInt8(p.blockId, offset); offset += 1;
-        buffer.writeUInt8(p.userLen, offset); offset += 1;
-        p.userBuffer.copy(buffer, offset); offset += p.userLen;
+        buffer.writeUInt8(userLen, offset); offset += 1;
+        buffer.write(userStr, offset, userLen, 'utf8'); offset += userLen;
     }
     
     return buffer;
@@ -122,6 +117,9 @@ pool.connect(async (err, client, release) => {
                 boardCache[`${p.x},${p.y}`] = p;
             });
             console.log(`Loaded ${boardRes.rows.length} pixels into RAM cache.`);
+
+            // Help the Garbage Collector: Clear the massive SQL array before doing binary math
+            boardRes.rows.length = 0; 
 
             // Build the initial binary cache
             binaryBoardCache = serializeBoard(boardCache);
