@@ -314,13 +314,12 @@ io.on('connection', async (socket) => {
                 console.log(`Pixel accepted at X:${x}, Y:${y} with color ${color} by ${username}`);
                 boardCache[`${x},${y}`] = { x, y, color, username };
 
-                // Efficiently append ONLY the new pixel to the raw binary cache (Saves massive CPU!)
-                const newPixelBuffer = serializeBoard({ "temp": { x, y, color, username } });
-                rawBinaryCache = Buffer.concat([rawBinaryCache, newPixelBuffer]);
-
-                // Asynchronously update the compressed cache in the background (Non-blocking!)
-                zlib.gzip(rawBinaryCache, (err, compressed) => {
-                    if (!err) compressedBinaryCache = compressed;
+                // Rebuild the binary cache in the background to prevent infinite file size growth
+                setImmediate(() => {
+                    rawBinaryCache = serializeBoard(boardCache);
+                    zlib.gzip(rawBinaryCache, (err, compressed) => {
+                        if (!err) compressedBinaryCache = compressed;
+                    });
                 });
 
                 // Tell the sender and broadcast to everyone else instantly
