@@ -26,6 +26,10 @@ let rawBinaryCache = Buffer.alloc(0);
 let compressedBinaryCache = Buffer.alloc(0);
 let serverConfig = { width: 100, height: 100, cooldownMs: 15000, lastBackupTime: 0 };
 
+// --- SERVER LIMITS ---
+const MAX_PLAYERS = 500; // Change this to whatever limit you want
+const loginCooldowns = {};
+
 // --- BLOCK ID DICTIONARY ---
 const blockIds = {
     "dirt": 1, "cobblestone": 2, "oak_planks": 3, "stone": 4, "sand": 5, "gravel": 6, "oak_log": 7, "oak_leaves": 8, "glass": 9, "bricks": 10, "obsidian": 11, "netherrack": 12, "soul_sand": 13, "glowstone": 14, "white_wool": 15, "diamond_block": 16, "orange_wool": 17, "magenta_wool": 18, "light_blue_wool": 19, "yellow_wool": 20, "lime_wool": 21, "pink_wool": 22, "gray_wool": 23, "light_gray_wool": 24, "cyan_wool": 25, "purple_wool": 26, "blue_wool": 27, "brown_wool": 28, "green_wool": 29, "red_wool": 30, "black_wool": 31, "gold_block": 32, "iron_block": 33, "emerald_block": 34, "redstone_block": 35, "lapis_block": 36, "coal_block": 37, "bookshelf": 38, "sponge": 39, "bedrock": 40, "white_concrete": 41, "orange_concrete": 42, "magenta_concrete": 43, "light_blue_concrete": 44, "yellow_concrete": 45, "lime_concrete": 46, "pink_concrete": 47, "gray_concrete": 48, "light_gray_concrete": 49, "cyan_concrete": 50, "purple_concrete": 51, "blue_concrete": 52, "brown_concrete": 53, "green_concrete": 54, "red_concrete": 55, "black_concrete": 56, "acacia_planks": 57, "birch_planks": 58, "jungle_planks": 59, "spruce_planks": 60, "dark_oak_planks": 61, "andesite": 62, "diorite": 63, "granite": 64, "polished_andesite": 65, "polished_diorite": 66, "polished_granite": 67, "clay": 68, "snow": 69, "packed_ice": 70
@@ -223,6 +227,18 @@ app.post('/login', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
     
+    // 1. Check Player Cap
+    if (io.engine.clientsCount >= MAX_PLAYERS) {
+        return res.status(503).json({ error: 'Server is currently full. Please try again later.' });
+    }
+
+    // 2. Check 60-Second Login Cooldown
+    const now = Date.now();
+    if (loginCooldowns[username] && (now - loginCooldowns[username] < 60000)) {
+        const secondsLeft = Math.ceil((60000 - (now - loginCooldowns[username])) / 1000);
+        return res.status(429).json({ error: `Please wait ${secondsLeft} seconds before logging in again.` });
+    }
+
     try {
         const result = await pool.query(`SELECT password_hash FROM users WHERE username = $1`, [username]);
         if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid username or password' });
@@ -230,6 +246,9 @@ app.post('/login', async (req, res) => {
         const match = await bcrypt.compare(password, result.rows[0].password_hash);
         if (!match) return res.status(401).json({ error: 'Invalid username or password' });
         
+        // Mark the successful login time to enforce the 60-second cooldown
+        loginCooldowns[username] = now;
+
         res.json({ success: true });
     } catch (err) {
         console.error(err);
