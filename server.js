@@ -24,10 +24,9 @@ const io = new Server(server);
 const boardCache = {};
 let rawBinaryCache = Buffer.alloc(0);
 let compressedBinaryCache = Buffer.alloc(0);
-let serverConfig = { width: 100, height: 100, cooldownMs: 15000, lastBackupTime: 0 };
+let serverConfig = { width: 100, height: 100, cooldownMs: 15000, lastBackupTime: 0, maxPlayers: 500, loginCooldownSeconds: 60 };
 
 // --- SERVER LIMITS ---
-const MAX_PLAYERS = 500; // Change this to whatever limit you want
 const loginCooldowns = {};
 
 // --- BLOCK ID DICTIONARY ---
@@ -130,19 +129,21 @@ pool.connect(async (err, client, release) => {
 
             // Create settings table for dynamic canvas sizing
             await client.query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
-            await client.query(`INSERT INTO settings (key, value) VALUES ('grid_width', '100'), ('grid_height', '100'), ('cooldown_seconds', '15'), ('last_backup_time', '0') ON CONFLICT DO NOTHING`);
+            await client.query(`INSERT INTO settings (key, value) VALUES ('grid_width', '100'), ('grid_height', '100'), ('cooldown_seconds', '15'), ('last_backup_time', '0'), ('max_players', '500'), ('login_cooldown_seconds', '60') ON CONFLICT DO NOTHING`);
             console.log("Settings table ready.");
             
             // Enable RLS to secure the table from direct Supabase API access
             await client.query(`ALTER TABLE settings ENABLE ROW LEVEL SECURITY`);
 
             // --- INITIALIZE RAM CACHE ON STARTUP ---
-            const configRes = await client.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height', 'cooldown_seconds', 'last_backup_time')");
+            const configRes = await client.query("SELECT key, value FROM settings WHERE key IN ('grid_width', 'grid_height', 'cooldown_seconds', 'last_backup_time', 'max_players', 'login_cooldown_seconds')");
             configRes.rows.forEach(row => {
                 if (row.key === 'grid_width') serverConfig.width = parseInt(row.value);
                 if (row.key === 'grid_height') serverConfig.height = parseInt(row.value);
                 if (row.key === 'cooldown_seconds') serverConfig.cooldownMs = parseInt(row.value) * 1000;
                 if (row.key === 'last_backup_time') serverConfig.lastBackupTime = parseInt(row.value);
+                if (row.key === 'max_players') serverConfig.maxPlayers = parseInt(row.value);
+                if (row.key === 'login_cooldown_seconds') serverConfig.loginCooldownSeconds = parseInt(row.value);
             });
             console.log("Settings loaded into RAM cache.");
 
@@ -228,14 +229,15 @@ app.post('/login', async (req, res) => {
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
     
     // 1. Check Player Cap
-    if (io.engine.clientsCount >= MAX_PLAYERS) {
+    if (io.engine.clientsCount >= serverConfig.maxPlayers) {
         return res.status(503).json({ error: 'Server is currently full. Please try again later.' });
     }
 
-    // 2. Check 60-Second Login Cooldown
+    // 2. Check Dynamic Login Cooldown
     const now = Date.now();
-    if (loginCooldowns[username] && (now - loginCooldowns[username] < 60000)) {
-        const secondsLeft = Math.ceil((60000 - (now - loginCooldowns[username])) / 1000);
+    const loginCooldownMs = serverConfig.loginCooldownSeconds * 1000;
+    if (loginCooldowns[username] && (now - loginCooldowns[username] < loginCooldownMs)) {
+        const secondsLeft = Math.ceil((loginCooldownMs - (now - loginCooldowns[username])) / 1000);
         return res.status(429).json({ error: `Please wait ${secondsLeft} seconds before logging in again.` });
     }
 
