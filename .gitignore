@@ -1,5 +1,23 @@
+# Node modules and Secrets
 node_modules/
 .env
+
+# Bot Scripts
+defender_bots.js
+eraser_bots.js
+squad.js
+commander.js
+
+# Dashboard & Launchers
+dashboard.html
+start_bots.bat
+start_erasers.bat
+start_commander.bat
+
+# Persistent Blueprint Memories
+blueprint*.json
+
+# Database, Logs, and Testing
 database.db
 *.log
 stress_test.js
