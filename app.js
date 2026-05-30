@@ -180,11 +180,27 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     const blockImages = {};
+    const imagePromises = [];
     for (const [name, url] of Object.entries(blocks)) {
         const img = new Image();
+        let retries = 0;
+        const promise = new Promise((resolve) => {
+            img.onload = resolve;
+            img.onerror = () => {
+                if (retries < 3) {
+                    retries++;
+                    console.log(`GitHub connection dropped. Retrying ${name} (${retries}/3)...`);
+                    setTimeout(() => { img.src = url + "?retry=" + Date.now(); }, 500 * retries);
+                } else {
+                    resolve(); // Give up after 3 tries to prevent infinite hanging
+                }
+            };
+        });
         img.src = url;
         blockImages[name] = img;
+        imagePromises.push(promise);
     }
+    const allImagesLoaded = Promise.all(imagePromises);
 
     let currentBlock = "dirt";
 
@@ -332,6 +348,9 @@ document.addEventListener("DOMContentLoaded", () => {
     socket.on('initBoard', async (compressedBuffer) => {
         console.log(`Received initial board state as compressed binary: ${compressedBuffer.byteLength} bytes.`);
         
+        // Wait for all textures to finish downloading from GitHub before drawing!
+        await allImagesLoaded;
+        
         // Decompress the gzip data using the browser's native API
         const response = new Response(compressedBuffer);
         const decompressedStream = response.body.pipeThrough(new DecompressionStream('gzip'));
@@ -360,7 +379,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Listen for incoming pixel updates from the server
-    socket.on('pixelUpdate', (data) => {
+    socket.on('pixelUpdate', async (data) => {
+        await allImagesLoaded; // Prevent race condition if update arrives before images load!
         console.log(`Received pixel update at X:${data.x}, Y:${data.y} with block/color ${data.color}`);
         drawPixel(data.x, data.y, data.color);
         if (data.username) {
@@ -369,7 +389,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Handle Server confirming our pixel was placed
-    socket.on('pixelAccepted', (data) => {
+    socket.on('pixelAccepted', async (data) => {
+        await allImagesLoaded; // Prevent race condition
         console.log(`Server accepted pixel at X:${data.x}, Y:${data.y}`);
         drawPixel(data.x, data.y, data.color);
         if (data.username) {
